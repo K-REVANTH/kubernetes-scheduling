@@ -18,6 +18,12 @@ Check nodes:
 kubectl get nodes
 ```
 
+Remove taint in master node (Only if using MASTER-NODE as 3rd node)
+
+```bash
+kubectl taint nodes master node-role.kubernetes.io/control-plane:NoSchedule-
+```
+
 ---
 
 ## Label Nodes
