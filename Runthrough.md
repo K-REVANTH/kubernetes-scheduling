@@ -4,8 +4,6 @@ This document provides step-by-step execution for each scenario.
 
 ---
 
----
-
 ## Setup
 
 Create namespace:
@@ -29,6 +27,9 @@ kubectl label node ip-172-31-15-1 env=prod
 kubectl label node ip-172-31-8-107 env=dev
 kubectl label node master gpu=true
 kubectl label node master disk=ssd
+
+kubectl label node ip-172-31-15-1 generation=3
+kubectl label node ip-172-31-8-107 generation=1
 ```
 
 Verify:
