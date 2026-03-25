@@ -1,312 +1,247 @@
-# Kubernetes Scheduling Walkthrough (Scenario-Based)
-
-This repository demonstrates Kubernetes scheduling concepts using real cluster experiments.
-
-Cluster setup used:
-
-- ip-172-31-15-1 → env=prod  
-- ip-172-31-8-107 → env=dev  
-- master → gpu=true, disk=ssd  
+# Kubernetes Scheduling Scenarios
 
 ---
 
-# SCENARIO 0: Setup (Mandatory)
+## SCENARIO 1: NodeSelector Success
 
-```bash
-kubectl create namespace scheduling-demo
-kubectl get nodes
-```
+Definition:  
+Pod is scheduled when node label matches exactly.
 
-Label nodes:
+Key Point:  
+Exact key-value match required.
 
-```bash
-kubectl label node ip-172-31-15-1 env=prod
-kubectl label node ip-172-31-8-107 env=dev
-kubectl label node master gpu=true
-kubectl label node master disk=ssd
-```
-
-Verify:
-
-```bash
-kubectl get nodes --show-labels
-```
+Result:  
+Pod → Running on `env=prod` node
 
 ---
 
-# SCENARIO 1: NodeSelector Success
+## SCENARIO 2: NodeSelector Failure
 
-```yaml
-nodeSelector:
-  env: prod
-```
+Definition:  
+Pod remains Pending when no node matches label.
 
-Result:
-- Pod scheduled on `ip-172-31-15-1`
+Key Point:  
+No fallback logic exists.
 
----
-
-# SCENARIO 2: NodeSelector Failure (Pending)
-
-```yaml
-nodeSelector:
-  env: staging
-```
-
-Result:
-- Pod → Pending
-
-Debug:
-
-```bash
-kubectl describe pod <pod-name>
-```
-
-Reason:
-- No node matches label
+Result:  
+Pod → Pending
 
 ---
 
-# SCENARIO 3: NodeSelector AND Condition
+## SCENARIO 3: NodeSelector AND Condition
 
-```yaml
-nodeSelector:
-  gpu: "true"
-  disk: ssd
-```
+Definition:  
+All labels must match.
 
-Result:
-- Pod runs only on **master**
+Key Point:  
+Multiple labels = AND condition
 
-Definition:
-- Multiple labels = AND
+Result:  
+Pod → Scheduled only on node having BOTH labels
 
 ---
 
-# SCENARIO 4: Taints Blocking Scheduling
+## SCENARIO 4: Node Affinity Required (Hard Rule)
 
-Master has taint:
+Definition:  
+Strict scheduling rule using expressions.
 
-```
-NoSchedule
-```
+Key Point:  
+If condition fails → Pod not scheduled
 
-Result:
-- Pod cannot be scheduled on master
-
-Fix:
-
-```bash
-kubectl taint nodes master node-role.kubernetes.io/control-plane:NoSchedule-
-```
+Result:  
+Pod → Runs only on matching node
 
 ---
 
-# SCENARIO 5: Node Affinity (Required Success)
+## SCENARIO 5: Node Affinity Required Failure
 
-```yaml
-operator: In
-values:
-- prod
-```
+Definition:  
+No node satisfies required condition.
 
-Result:
-- Pod runs on prod node
+Key Point:  
+Hard constraint → blocks scheduling
 
----
-
-# SCENARIO 6: Node Affinity Failure
-
-```yaml
-values:
-- staging
-```
-
-Result:
-- Pod → Pending
-
-Reason:
-- No matching node
+Result:  
+Pod → Pending
 
 ---
 
-# SCENARIO 7: Preferred Affinity (Soft Rule)
+## SCENARIO 6: Node Affinity Preferred (Soft Rule)
 
-```yaml
-preferredDuringSchedulingIgnoredDuringExecution
-```
+Definition:  
+Scheduler prefers matching nodes but not mandatory.
 
-Result:
-- Pod schedules even if condition not met
+Key Point:  
+Best effort scheduling
 
-Definition:
-- Soft constraint
-
----
-
-# SCENARIO 8: Multiple Preferred (Scoring)
-
-Weights:
-
-- env=prod → 50  
-- disk=ssd → 30  
-- gpu=true → 20  
-
-### Observation:
-
-- prod node score = 50  
-- master score = 50  
-
-Result:
-- Pod scheduled on **master**
-
-### Key Insight:
-
-- Tie → scheduler uses internal logic  
-- Not deterministic  
+Result:  
+Pod → Always runs (even if rule not met)
 
 ---
 
-# SCENARIO 9: Exists Operator
+## SCENARIO 7: Node Affinity Preferred Multi (Scoring)
 
-```yaml
-operator: Exists
-key: gpu
-```
+Definition:  
+Multiple preferences with weights.
 
-Result:
-- Pod runs on master
+Key Point:  
+Scheduler calculates total score.
 
----
-
-# SCENARIO 10: NotIn Operator
-
-```yaml
-operator: NotIn
-values:
-- dev
-```
-
-Result:
-- Avoids dev node
+Result:  
+Pod → Scheduled on highest scoring node
 
 ---
 
-# SCENARIO 11: DoesNotExist Operator
+## SCENARIO 8: Operator Exists
 
-```yaml
-operator: DoesNotExist
-key: test
-```
+Definition:  
+Node must have the key.
 
-Result:
-- Pod runs on any node
+Key Point:  
+Value is ignored
 
----
-
-# SCENARIO 12: Gt Operator
-
-```yaml
-operator: Gt
-values:
-- "2"
-```
-
-Label:
-
-```bash
-kubectl label node ip-172-31-15-1 cpu=4
-```
-
-Result:
-- Pod runs on that node
+Result:  
+Pod → Runs where key exists
 
 ---
 
-# SCENARIO 13: Lt Operator
+## SCENARIO 9: Operator NotIn
 
-```yaml
-operator: Lt
-values:
-- "10"
-```
+Definition:  
+Excludes nodes with specific values.
 
-Result:
-- Condition satisfied → pod runs
+Key Point:  
+Negative filtering
 
----
-
-# SCENARIO 14: OR Logic
-
-```yaml
-nodeSelectorTerms:
-- env=prod
-- env=dev
-```
-
-Result:
-- Pod runs on either prod OR dev
+Result:  
+Pod → Avoids specified nodes
 
 ---
 
-# SCENARIO 15: AND Logic
+## SCENARIO 10: Operator DoesNotExist
 
-```yaml
-gpu Exists AND disk=ssd
-```
+Definition:  
+Node must NOT contain key.
 
-Result:
-- Pod runs only on master
+Key Point:  
+Inverse of Exists
 
----
-
-# SCENARIO 16: Anti-Affinity (Required - Strict)
-
-```yaml
-podAntiAffinity:
-  requiredDuringSchedulingIgnoredDuringExecution
-```
-
-Rule:
-- Do NOT place pods with same label on same node
-
-Result:
-- Pods spread across nodes
+Result:  
+Pod → Runs on nodes without key
 
 ---
 
-# SCENARIO 17: Anti-Affinity Spreading
+## SCENARIO 11: Operator Gt (Greater Than)
 
-Deploy multiple pods:
+Definition:  
+Numeric comparison on label value.
 
-Result:
-- Each pod goes to different node
+Key Point:  
+Values treated as numbers (strings)
 
----
-
-# SCENARIO 18: Anti-Affinity Failure (Important)
-
-Deploy more pods than nodes:
-
-Result:
-- Last pod → Pending
-
-Reason:
-
-```
-didn't match pod anti-affinity rules
-```
+Result:  
+Pod → Runs on nodes with value > given
 
 ---
 
-# SCENARIO 19: Anti-Affinity Preferred (Soft)
+## SCENARIO 12: Operator Lt (Less Than)
 
-```yaml
-preferredDuringSchedulingIgnoredDuringExecution
-```
+Definition:  
+Numeric comparison for lower values.
 
-Result:
-- Pods try to spread
-- Never Pending
+Key Point:  
+Useful for capacity-based scheduling
+
+Result:  
+Pod → Runs on nodes with value < given
 
 ---
+
+## SCENARIO 13: Node Affinity OR Logic
+
+Definition:  
+Multiple nodeSelectorTerms act as OR.
+
+Key Point:  
+Any one term match is enough
+
+Result:  
+Pod → Runs on any matching node
+
+---
+
+## SCENARIO 14: Node Affinity AND Logic
+
+Definition:  
+Multiple matchExpressions inside one term.
+
+Key Point:  
+All conditions must be satisfied
+
+Result:  
+Pod → Runs only if all match
+
+---
+
+## SCENARIO 15: Pod Anti-Affinity Required
+
+Definition:  
+Prevents pods from being scheduled together.
+
+Key Point:  
+Works on pod labels, not node labels
+
+Result:  
+Pods → Spread across nodes
+
+---
+
+## SCENARIO 16: Pod Anti-Affinity Multiple Pods
+
+Definition:  
+Each new pod avoids existing matching pods.
+
+Key Point:  
+One pod per node (for same label)
+
+Result:  
+Pods → Distributed across cluster
+
+---
+
+## SCENARIO 17: Pod Anti-Affinity Failure
+
+Definition:  
+More pods than available nodes.
+
+Key Point:  
+Strict rule blocks scheduling
+
+Result:  
+Extra Pod → Pending
+
+---
+
+## SCENARIO 18: Pod Anti-Affinity Preferred
+
+Definition:  
+Soft anti-affinity rule.
+
+Key Point:  
+Scheduler tries to spread but doesn’t enforce
+
+Result:  
+Pod → Always scheduled
+
+---
+
+## FINAL SUMMARY (IMPORTANT)
+
+nodeSelector → simple exact match  
+nodeAffinity → advanced logic-based scheduling  
+podAntiAffinity → prevents co-location of similar pods  
+
+Golden Line:  
+Affinity attracts pods to nodes  
+Anti-affinity repels pods from each other
