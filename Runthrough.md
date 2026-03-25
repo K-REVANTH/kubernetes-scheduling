@@ -4,6 +4,39 @@ This document provides step-by-step execution for each scenario.
 
 ---
 
+---
+
+## Setup
+
+Create namespace:
+
+```bash
+kubectl create namespace scheduling-demo
+```
+
+Check nodes:
+
+```bash
+kubectl get nodes
+```
+
+---
+
+## Label Nodes
+
+```bash
+kubectl label node ip-172-31-15-1 env=prod
+kubectl label node ip-172-31-8-107 env=dev
+kubectl label node master gpu=true
+kubectl label node master disk=ssd
+```
+
+Verify:
+
+```bash
+kubectl get nodes --show-labels
+```
+
 # SCENARIO 1: NodeSelector Success
 
 ## YAML
