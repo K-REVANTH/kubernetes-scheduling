@@ -1,6 +1,8 @@
 # Kubernetes Scheduling Walkthrough
 
-This repository demonstrates Kubernetes scheduling concepts using hands-on examples.
+This repository demonstrates Kubernetes scheduling concepts with a clear separation of theory and hands-on practice.
+
+---
 
 ## Topics Covered
 
@@ -10,351 +12,221 @@ This repository demonstrates Kubernetes scheduling concepts using hands-on examp
 - AND vs OR behavior
 - Taints & tolerations interaction
 - Scheduling failures (Pending pods)
+- Pod Anti-Affinity
 
 ---
 
-## 1. Setup
+## How to Use This Repository
 
-Create namespace:
+- Refer **Scenarios.md** → for concept-wise explanation of each scenario  
+- Refer **Runthrough.md** → for step-by-step execution (YAML + commands)
 
-```bash
-kubectl create namespace scheduling-demo
-```
+👉 Recommended flow:
 
-Check nodes:
-
-```bash
-kubectl get nodes
-```
+1. Read concept from `Scenarios.md`  
+2. Execute using `Runthrough.md`  
+3. Observe behavior using `kubectl get pods` and `kubectl describe`
 
 ---
 
-## 2. Label Nodes
+## 1. NodeSelector
 
-```bash
-kubectl label node ip-172-31-15-1 env=prod
-kubectl label node ip-172-31-8-107 env=dev
-kubectl label node master gpu=true
-kubectl label node master disk=ssd
-```
+Definition:  
+Simple scheduling method using exact label matching.
 
-Verify:
+Key Points:
+- Works only with exact key-value match
+- No support for OR, NOT, or advanced logic
 
-```bash
-kubectl get nodes --show-labels
-```
+Behavior:
+- Pod schedules only if node label matches exactly
+- Otherwise → Pod remains Pending
 
 ---
 
-## 3. NodeSelector
+## 2. Multiple Labels (AND Condition)
 
-### Working case
+Definition:  
+All labels must match for scheduling.
 
-```yaml
-nodeSelector:
-  env: prod
-```
-
-Result:
-- Pod scheduled on node with label `env=prod`
-
-### Failure case
-
-```yaml
-nodeSelector:
-  env: staging
-```
-
-Result:
-- Pod stays in Pending
-- No node matches label
-
-Debug:
-
-```bash
-kubectl describe pod <pod-name>
-```
+Key Points:
+- Multiple labels = logical AND
+- No partial match allowed
 
 ---
 
-## 4. Multiple Labels (AND condition)
+## 3. Taints and Tolerations
 
-```yaml
-nodeSelector:
-  gpu: "true"
-  disk: ssd
-```
+Definition:  
+Taints repel pods from nodes unless tolerated.
 
-Definition:
-- All labels must match (logical AND)
+Key Points:
+- `NoSchedule` → prevents pod placement
+- Tolerations allow pods to bypass taints
 
----
-
-## 5. Taints Interaction
-
-Default taint on master:
-
-```bash
-node-role.kubernetes.io/control-plane:NoSchedule
-```
-
-Remove taint:
-
-```bash
-kubectl taint nodes master node-role.kubernetes.io/control-plane:NoSchedule-
-```
+Behavior:
+- Pod will not schedule on tainted node unless tolerated
 
 ---
 
-## 6. Node Affinity (Required)
+## 4. Node Affinity
 
-```yaml
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: env
-          operator: In
-          values:
-          - prod
-```
-
-Definition:
-- Mandatory condition
-- Pod will NOT schedule if not matched
+Definition:  
+Advanced version of nodeSelector with logical operators.
 
 ---
 
-## 7. Node Affinity (Preferred)
+### 4.1 Required Affinity (Hard Rule)
 
-```yaml
-affinity:
-  nodeAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-    - weight: 10
-      preference:
-        matchExpressions:
-        - key: env
-          operator: In
-          values:
-          - staging
-```
+Definition:  
+Mandatory condition for scheduling.
 
-Definition:
-- Soft rule
-- Scheduler tries but does not guarantee
+Key Points:
+- If condition not satisfied → Pod stays Pending
 
 ---
 
-## 8. Multiple Preferred Rules (Scoring)
+### 4.2 Preferred Affinity (Soft Rule)
 
-```yaml
-preferredDuringSchedulingIgnoredDuringExecution:
-- weight: 50
-  preference:
-    matchExpressions:
-    - key: env
-      operator: In
-      values:
-      - prod
+Definition:  
+Scheduler preference, not mandatory.
 
-- weight: 30
-  preference:
-    matchExpressions:
-    - key: disk
-      operator: In
-      values:
-      - ssd
+Key Points:
+- Pod will still be scheduled even if rule not matched
 
-- weight: 20
-  preference:
-    matchExpressions:
-    - key: gpu
-      operator: In
-      values:
-      - "true"
-```
+---
 
-Definition:
-- Scheduler selects node with highest total score
+### 4.3 Scoring Mechanism
+
+Definition:  
+Scheduler assigns weights to preferred rules.
+
+Key Points:
+- Node with highest score is selected
 - Tie → non-deterministic selection
 
 ---
 
-## 9. Operators
+## 5. Operators
 
-### Exists
+### Exists  
+Key must be present
 
-```yaml
-operator: Exists
-```
+### DoesNotExist  
+Key must NOT be present
 
-Definition:
-- Key must be present
+### In  
+Value must match one from list
 
----
+### NotIn  
+Value must NOT match list
 
-### DoesNotExist
+### Gt  
+Numeric value greater than given value
 
-```yaml
-operator: DoesNotExist
-```
-
-Definition:
-- Key must NOT be present
+### Lt  
+Numeric value less than given value
 
 ---
 
-### In
+## 6. OR vs AND Logic
 
-```yaml
-operator: In
-values: [prod]
-```
+### OR Logic
 
-Definition:
-- Value must match one of the list
+Definition:  
+Multiple `nodeSelectorTerms`
 
----
-
-### NotIn
-
-```yaml
-operator: NotIn
-values: [dev]
-```
-
-Definition:
-- Value must NOT match
+Key Point:
+- Any one condition satisfied → scheduling allowed
 
 ---
 
-### Gt
+### AND Logic
 
-```yaml
-operator: Gt
-values: ["2"]
-```
+Definition:  
+Multiple `matchExpressions` inside a term
 
-Definition:
-- Numeric label greater than value
+Key Point:
+- All conditions must be satisfied
 
 ---
 
-### Lt
+## 7. Pod Anti-Affinity
 
-```yaml
-operator: Lt
-values: ["10"]
-```
+Definition:  
+Prevents pods with same label from being scheduled together.
 
-Definition:
-- Numeric label less than value
-
----
-
-## 10. OR vs AND Logic
-
-### OR condition
-
-```yaml
-nodeSelectorTerms:
-- matchExpressions:
-  - key: env
-    operator: In
-    values: [prod]
-
-- matchExpressions:
-  - key: env
-    operator: In
-    values: [dev]
-```
-
-Definition:
-- Multiple nodeSelectorTerms = OR
+Key Points:
+- Works on **pod labels**, not node labels
+- Used for high availability and distribution
 
 ---
 
-### AND condition
+### 7.1 Required Anti-Affinity
 
-```yaml
-matchExpressions:
-- key: gpu
-  operator: Exists
-
-- key: disk
-  operator: In
-  values: [ssd]
-```
-
-Definition:
-- Multiple matchExpressions = AND
+- Strict rule
+- Can cause Pending pods
 
 ---
 
-## 11. Failure Debugging
+### 7.2 Preferred Anti-Affinity
+
+- Soft rule
+- Never blocks scheduling
+
+---
+
+## 8. Failure Debugging
+
+Use:
 
 ```bash
 kubectl describe pod <pod-name>
 ```
 
-Typical error:
-
-```
-0/3 nodes are available:
-- didn't match node selector
-- had untolerated taint
-```
-
-Definition:
-- Either label mismatch or taint issue
+Common Reasons:
+- Label mismatch
+- Affinity rules not satisfied
+- Anti-affinity restrictions
+- Untolerated taints
 
 ---
 
-## 12. Key Takeaways
+## 9. Key Takeaways
 
-- nodeSelector = simple exact match
-- required affinity = strict rule
-- preferred affinity = scoring-based soft rule
-- matchExpressions inside same block = AND
-- nodeSelectorTerms = OR
-- scheduler uses scoring + tie-breakers
-- Pending pods are important for demos
+- nodeSelector → simple exact match  
+- nodeAffinity → advanced logic-based scheduling  
+- podAntiAffinity → prevents co-location  
+- taints → repel pods  
+- tolerations → allow scheduling  
 
----
+Important:
 
-## 13. Interview Tips
-
-- Always show failure case (Pending)
-- Always use `kubectl describe`
-- Combine taints + affinity for advanced demos
-- Explain scoring logic clearly
+- matchExpressions → AND  
+- nodeSelectorTerms → OR  
+- preferred rules → scoring-based  
 
 ---
 
-## 14. Folder Structure
+## 10. Interview Tips
 
-```
-class-demo/
-  ns-basic.yaml
-  ns-basic2.yaml
-  ns-basic3.yaml
-  affinity-required.yaml
-  affinity-required2.yaml
-  affinity-preferred.yaml
-  affinity-preferred-multi.yaml
-  affinity-exists.yaml
-  affinity-notin.yaml
-  affinity-doesnotexist.yaml
-  affinity-gt.yaml
-  affinity-lt.yaml
-  affinity-or.yaml
-  affinity-and.yaml
-```
+- Always explain Pending pods  
+- Always use `kubectl describe`  
+- Clearly differentiate AND vs OR  
+- Explain scoring and tie-breaking  
+- Highlight node vs pod label difference  
 
 ---
 
-## 15. Conclusion
+## 11. Conclusion
 
-This repo demonstrates real-world Kubernetes scheduling behavior including success, failure, and edge cases. Useful for deep understanding and interview preparation.
+This repository provides:
+
+- Clear conceptual understanding → `Scenarios.md`  
+- Hands-on execution → `Runthrough.md`  
+
+Together, they help in:
+
+- Deep understanding of Kubernetes scheduling  
+- Real-world debugging  
+- Interview preparation  
